@@ -1,0 +1,36 @@
+services:
+  elasticsearch:
+    build:
+      context: ./docker/elasticsearch
+      args:
+        ES_VERSION: ${ES_VERSION:-9.4.3}
+    container_name: apt-es
+    environment:
+      - discovery.type=single-node
+      # 로컬 개발용. 운영이라면 security를 켜고 API key로 접속해야 함
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+      # 사용자 사전·동의어 파일. 수정 후 동의어는 _reload_search_analyzers로 무중단 반영
+      - ./es/analysis:/usr/share/elasticsearch/config/analysis:ro
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow || exit 1"]
+      interval: 10s
+      retries: 12
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ES_VERSION:-9.4.3}
+    container_name: apt-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+volumes:
+  es-data:

@@ -1,0 +1,33 @@
+{
+  "name": "apt-search",
+  "version": "0.1.0",
+  "description": "국토부 아파트 실거래가 Elasticsearch 검색 서비스",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "es:up": "docker compose up -d --build",
+    "es:down": "docker compose down",
+    "collect": "tsx src/ingest/collect.ts",
+    "index": "tsx src/ingest/index-data.ts",
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@elastic/elasticsearch": "9.4.3",
+    "dotenv": "^18.0.8",
+    "fast-xml-parser": "^5.11.2",
+    "fastify": "^5.12.7",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}

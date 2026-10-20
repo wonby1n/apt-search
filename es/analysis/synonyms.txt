@@ -1,0 +1,7 @@
+# 검색 시점에만 적용 (search analyzer). 수정 후:
+#   POST apt-trades/_reload_search_analyzers
+# 오타·약칭을 브랜드명으로 묶음
+래미안, 레미안
+힐스테이트, 힐스
+아이파크, 아이팍
+자이, xi
