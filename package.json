@@ -18,7 +18,8 @@
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:it": "vitest run --mode it tests/search.it.test.ts"
+    "test:it": "vitest run --mode it tests/search.it.test.ts",
+    "test:e2e": "node tests/e2e/home.mjs && node tests/e2e/click.mjs"
   },
   "dependencies": {
     "@elastic/elasticsearch": "9.4.3",
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "puppeteer-core": "^24.10.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^5.0.5"

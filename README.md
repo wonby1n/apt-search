@@ -271,5 +271,6 @@ data.go.kr API ──collect──▶ data/raw/*.ndjson ────────
 ```bash
 npm test         # XML 파싱, 변환, 쿼리 빌더, 매핑-쿼리 필드 정합성
 npm run test:it  # 실제 ES(+nori)로 부분 검색·자동완성·단지명 전체 매칭 회귀 (npm run es:up 필요)
+npm run test:e2e # 실제 크롬으로 화면 클릭 흐름 확인 (서버 실행 필요, CHROME_PATH·BASE_URL로 변경 가능)
 npm run typecheck
 ```
