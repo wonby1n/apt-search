@@ -6,6 +6,7 @@ import { findRegion } from './regions.js';
 export interface TradeDoc {
   aptName: string;
   aptSeq: string | null;
+  complexId: string;
   aptDong: string | null;
   sido: string | null;
   sggCd: string;
@@ -25,6 +26,8 @@ export interface TradeDoc {
   sellerType: string | null;
   canceled: boolean;
   cancelDate: string | null;
+  location: { lat: number; lon: number } | null; // npm run geocode 캐시에서 색인 시 채움
+  firstSeenDate: string | null; // 매일 갱신에서 처음 발견한 날 (data/first-seen.ndjson). 최초 일괄 수집분은 null
 }
 
 export const SQM_PER_PYEONG = 3.305785;
@@ -91,10 +94,12 @@ export function transformTrade(r: RawTrade, lawdCdHint?: string): TransformResul
   const region = findRegion(sggCd);
   const umdName = clean(r.umdNm);
   const jibun = clean(r.jibun);
+  const aptSeq = clean(r.aptSeq);
 
   const doc: TradeDoc = {
     aptName,
-    aptSeq: clean(r.aptSeq),
+    aptSeq,
+    complexId: aptSeq ?? [sggCd, umdName, jibun, aptName].join('|'),
     aptDong: clean(r.aptDong),
     sido: region?.sido ?? null,
     sggCd,
@@ -114,6 +119,8 @@ export function transformTrade(r: RawTrade, lawdCdHint?: string): TransformResul
     sellerType: clean(r.slerGbn),
     canceled: clean(r.cdealType) === 'O',
     cancelDate: parseShortDate(r.cdealDay),
+    location: null,
+    firstSeenDate: null,
   };
 
   return { ok: true, id: tradeId(r), doc };

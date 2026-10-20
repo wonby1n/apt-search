@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>아파트 실거래가 검색</title>
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1b1f24; --muted: #6a737d; --line: #e3e6ea;
+    --accent: #2f6fde; --accent-soft: #e8f0fd; --danger: #c93c37; --danger-soft: #fdecea;
+    --shadow: 0 1px 2px rgb(0 0 0 / .06), 0 4px 16px rgb(0 0 0 / .06);
+    --new: #1f8a4c; --new-soft: #e6f6ec; --mark: #fff0a0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418; --panel: #1a1e24; --text: #e6e8eb; --muted: #9aa3ad; --line: #2b3138;
+      --accent: #6b9cf5; --accent-soft: #1f2b40; --danger: #f07a74; --danger-soft: #3a2120;
+      --new: #5fd08f; --new-soft: #1b3326; --mark: #5c4d00;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; } /* display를 지정한 요소에도 hidden이 먹도록 */
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Pretendard", system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+    display: grid; grid-template-rows: auto 1fr;
+  }
+  button, input, select { font: inherit; color: inherit; }
+
+  header {
+    display: flex; align-items: center; gap: 16px; padding: 12px 20px;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 17px; margin: 0; white-space: nowrap; }
+  header h1 a { color: inherit; text-decoration: none; }
+  .search { position: relative; flex: 1; max-width: 560px; }
+  .search input {
+    width: 100%; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--bg); outline: none;
+  }
+  .search input:focus { border-color: var(--accent); }
+  .chip {
+    display: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    background: var(--accent-soft); color: var(--accent); border: 0; border-radius: 999px;
+    padding: 3px 10px; font-size: 12px; cursor: pointer;
+  }
+  .chip.on { display: block; }
+  .suggest {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 1000;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: var(--shadow); list-style: none; margin: 0; padding: 4px; display: none;
+  }
+  .suggest.on { display: block; }
+  .suggest li { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  .suggest li.active, .suggest li:hover { background: var(--accent-soft); }
+  .suggest .sub { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .suggest mark { background: none; color: var(--accent); font-weight: 700; }
+
+  main { display: grid; grid-template-columns: 440px 1fr; min-height: 0; }
+  aside { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--panel); }
+
+  .filters { padding: 14px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+  .row { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 8px; }
+  .row label { color: var(--muted); font-size: 13px; }
+  .pair { display: flex; align-items: center; gap: 6px; }
+  .pair input, .row select { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .pair span { color: var(--muted); }
+  .toggles { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .toggles label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .toggles select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+
+  .summary { padding: 10px 16px; color: var(--muted); font-size: 13px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); }
+  .list { overflow-y: auto; flex: 1; }
+  .item { padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; }
+  .item:hover, .item.active { background: var(--accent-soft); }
+  .item .name { font-weight: 600; }
+  .item .price { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+  .item .meta { color: var(--muted); font-size: 12.5px; }
+  .item .right { text-align: right; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-left: 6px; vertical-align: 1px; font-weight: 500; }
+  .badge.cancel { background: var(--danger-soft); color: var(--danger); }
+  .badge.dist { background: var(--accent-soft); color: var(--accent); }
+  .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+  .badge.new { background: var(--new-soft); color: var(--new); }
+  .status { margin-left: auto; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .summary select { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0; }
+  .summary .right { display: flex; gap: 10px; align-items: center; }
+  .item .name mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
+
+  /* 메인 화면 (주소에 검색 조건이 없을 때) */
+  .landing { overflow-y: auto; min-height: 0; }
+  .landing .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 40px; display: grid; gap: 20px; }
+  .hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  .hero .eyebrow { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+  .hero h2 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+  .hero h2 em { font-style: normal; color: var(--new); }
+  .hero p.sub { margin: 8px 0 0; color: var(--muted); line-height: 1.55; max-width: 720px; }
+  .cta { border: 0; background: var(--accent); color: #fff; border-radius: 10px; padding: 10px 16px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .card small { color: var(--muted); display: block; }
+  .card b { display: block; font-size: 22px; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card span { color: var(--muted); font-size: 12.5px; display: block; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card.new b { color: var(--new); }
+  .cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .panel h3 { margin: 0; padding: 14px 16px; font-size: 15px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .panel h3 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .side { display: grid; gap: 16px; }
+  .feed .item:last-child { border-bottom: 0; }
+  .more { display: block; width: 100%; border: 0; border-top: 1px solid var(--line); background: none; padding: 12px; color: var(--accent); cursor: pointer; font-weight: 600; }
+  .rank { display: grid; padding: 6px; }
+  .rank button {
+    display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; text-align: left;
+    border: 0; background: none; padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  }
+  .rank button:hover { background: var(--accent-soft); }
+  .rank .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .rank .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank .sub { color: var(--muted); font-size: 12px; display: block; }
+  .rank .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .foot { color: var(--muted); font-size: 12.5px; margin: 0; }
+
+  /* Elasticsearch 검색 과정 */
+  .es { border-bottom: 1px solid var(--line); background: var(--bg); font-size: 12.5px; }
+  .es summary { padding: 9px 16px; cursor: pointer; color: var(--accent); font-weight: 600; }
+  .es .steps { padding: 0 16px 10px; display: grid; gap: 7px; }
+  .es .step { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: baseline; }
+  .es .step > span { color: var(--muted); }
+  .tok { display: inline-block; padding: 1px 7px; border-radius: 5px; margin: 0 4px 4px 0; background: var(--panel); border: 1px solid var(--line); font-weight: 600; }
+  .tok.syn { border-style: dashed; color: var(--accent); }
+  .tok.ng { font-weight: 400; color: var(--muted); }
+
+  .score { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .bar { display: inline-block; width: 72px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; flex: none; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .score b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .why { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0; font-size: 12px; margin-left: auto; }
+  .explain { grid-column: 1 / -1; margin-top: 8px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; cursor: default; }
+  .explain .frow { display: grid; grid-template-columns: 96px 1fr 44px; gap: 8px; align-items: center; margin-top: 4px; }
+  .explain .frow.off { color: var(--muted); }
+  .explain .frow.off .bar i { background: var(--muted); }
+  .explain .frow .bar { width: 100%; }
+  .explain table { width: 100%; border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  .explain th, .explain td { padding: 4px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  .explain th { color: var(--muted); font-weight: 500; }
+  .explain th:first-child, .explain td:first-child { text-align: left; }
+  .explain .note { color: var(--muted); margin-top: 8px; line-height: 1.5; }
+
+  .pager { display: flex; justify-content: center; gap: 6px; padding: 10px; border-top: 1px solid var(--line); }
+  .pager button { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  .pager button:disabled { opacity: .4; cursor: default; }
+
+  #map { min-height: 0; }
+  .map-hint {
+    position: absolute; z-index: 500; left: 50%; top: 12px; transform: translateX(-50%);
+    background: var(--panel); color: var(--text); padding: 6px 12px; border-radius: 999px;
+    box-shadow: var(--shadow); font-size: 13px; pointer-events: none; display: none;
+  }
+  .map-hint.on { display: block; }
+  .map-wrap { position: relative; min-height: 0; display: grid; }
+  .pin {
+    background: var(--accent); color: #fff; border: 2px solid #fff; border-radius: 6px;
+    padding: 1px 6px; font-size: 12px; font-weight: 700; white-space: nowrap;
+    box-shadow: 0 1px 4px rgb(0 0 0 / .3); transform: translate(-50%, -50%); width: max-content;
+  }
+  .pin.sel { background: #e8590c; }
+  .leaflet-popup-content button {
+    margin-top: 6px; border: 0; border-radius: 6px; padding: 4px 10px; cursor: pointer;
+    background: #2f6fde; color: #fff;
+  }
+
+  @media (max-width: 860px) {
+    header { flex-wrap: wrap; padding: 10px 16px; }
+    .search { max-width: none; flex-basis: 100%; }
+    main { grid-template-columns: 1fr; grid-template-rows: 45vh auto; }
+    .map-wrap { order: -1; }
+    aside { border-right: 0; }
+    .cards { grid-template-columns: repeat(2, 1fr); }
+    .cols { grid-template-columns: 1fr; }
+    .landing .wrap { padding: 20px 16px 32px; }
+    .hero h2 { font-size: 21px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><a href="/" id="homeLink">🏢 아파트 실거래가</a></h1>
+  <div class="search">
+    <input id="q" placeholder="단지명·동·도로명 (예: 래미안, 퍼스티지, 반포동)" autocomplete="off" />
+    <button class="chip" id="complexChip" title="단지 선택 해제">단지 선택됨 ✕</button>
+    <ul class="suggest" id="suggest"></ul>
+  </div>
+  <div class="status" id="status"></div>
+</header>
+
+<section class="landing" id="homeView" hidden>
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <p class="eyebrow">서울 아파트 매매 실거래가 · 국토교통부 공공데이터</p>
+        <h2 id="heroTitle">새로 공개된 실거래</h2>
+        <p class="sub" id="heroSub"></p>
+      </div>
+      <button class="cta" id="openMap">지도에서 전체 보기 →</button>
+    </div>
+    <div class="cards" id="homeCards"></div>
+    <div class="cols">
+      <section class="panel">
+        <h3><span id="feedTitle">최근 거래</span><small id="feedNote"></small></h3>
+        <div class="feed" id="feed"></div>
+        <button class="more" id="feedMore">지도에서 더 보기 →</button>
+      </section>
+      <div class="side">
+        <section class="panel"><h3>최고가 거래 <small id="topNote"></small></h3><div class="rank" id="topTrades"></div></section>
+        <section class="panel"><h3>거래 많은 단지 <small id="busyNote"></small></h3><div class="rank" id="busiest"></div></section>
+      </div>
+    </div>
+    <p class="foot">실거래는 계약 후 30일 안에 신고돼서 최근 계약일수록 아직 공개 전인 거래가 많아요. 그래서 "어제 계약된 거래" 대신 "새로 공개된 거래"를 보여줘요.</p>
+  </div>
+</section>
+
+<main id="searchView" hidden>
+  <aside>
+    <form class="filters" id="filters">
+      <div class="row"><label for="sggCd">지역</label><select id="sggCd"><option value="">전체</option></select></div>
+      <div class="row"><label>가격</label>
+        <div class="pair"><input id="minPrice" type="number" min="0" step="0.5" placeholder="최소" /><span>~</span><input id="maxPrice" type="number" min="0" step="0.5" placeholder="최대" /><span>억</span></div>
+      </div>
+      <div class="row"><label>전용면적</label>
+        <div class="pair"><input id="minArea" type="number" min="0" placeholder="최소" /><span>~</span><input id="maxArea" type="number" min="0" placeholder="최대" /><span>㎡</span></div>
+      </div>
+      <div class="row"><label>계약일</label>
+        <div class="pair"><input id="from" type="date" /><span>~</span><input id="to" type="date" /></div>
+      </div>
+      <div class="toggles">
+        <label><input type="checkbox" id="radiusOn" /> 지도에서 반경 검색</label>
+        <select id="radiusKm" aria-label="반경">
+          <option value="0.5">500m</option><option value="1" selected>1km</option><option value="2">2km</option><option value="3">3km</option><option value="5">5km</option>
+        </select>
+        <label><input type="checkbox" id="includeCanceled" /> 해제 거래 포함</label>
+        <label id="newOnlyLabel" hidden><input type="checkbox" id="newOnly" /> 신규 공개만 <span id="newOnlyInfo"></span></label>
+      </div>
+    </form>
+    <div class="summary">
+      <span id="count">검색어를 입력하거나 필터를 골라보세요</span>
+      <span class="right">
+        <select id="sort" hidden aria-label="정렬"><option value="relevance">관련도순</option><option value="recent">최신 계약순</option></select>
+        <span id="took"></span>
+      </span>
+    </div>
+    <details class="es" id="es" open hidden>
+      <summary>Elasticsearch가 검색어를 이렇게 처리했어요</summary>
+      <div class="steps" id="esSteps"></div>
+    </details>
+    <div class="list" id="list"></div>
+    <div class="pager"><button id="prev">이전</button><button id="next">다음</button></div>
+  </aside>
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="map-hint" id="mapHint">지도를 클릭하면 그 지점 기준으로 검색해요</div>
+  </div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const SQM_PER_PYEONG = 3.305785;
+const PAGE_SIZE = 20;
+
+const state = { complexId: null, page: 1, center: null, latestFirstSeen: null, nextRefreshAt: null, focusAfter: null };
+
+const FIELD_LABEL = {
+  aptName: '단지명', 'aptName.ngram': '단지명 부분', 'umdName.text': '동', 'roadName.text': '도로명', address: '주소',
+};
+/** ES 하이라이트(<em>)를 이스케이프한 뒤 <mark>로 */
+const hl = (frag) => esc(frag).replace(/&lt;(\/?)em&gt;/g, '<$1mark>');
+const shortDate = (iso) => {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+// ---------- 표시 형식 ----------
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+/** 만원 → "38억 5,000" / "9,500만" */
+function won(manwon) {
+  const eok = Math.floor(manwon / 10000), rest = manwon % 10000;
+  if (!eok) return `${rest.toLocaleString()}만`;
+  return rest ? `${eok}억 ${rest.toLocaleString()}` : `${eok}억`;
+}
+const pyeong = (sqm) => (sqm / SQM_PER_PYEONG).toFixed(1);
+const sqm = (a) => +Number(a).toFixed(2); // 원본이 273.9424처럼 와도 소수 2자리
+
+// ---------- 지도 ----------
+const map = L.map('map', { zoomControl: true }).setView([37.5326, 126.99], 11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '&copy; OpenStreetMap',
+}).addTo(map);
+const markers = L.layerGroup().addTo(map);
+let radiusCircle = null;
+const markerByComplex = new Map();
+
+map.on('click', (e) => {
+  if (!$('radiusOn').checked) return;
+  state.center = e.latlng;
+  run(1);
+});
+
+function drawRadius() {
+  if (radiusCircle) { radiusCircle.remove(); radiusCircle = null; }
+  if (!$('radiusOn').checked || !state.center) return;
+  radiusCircle = L.circle(state.center, {
+    radius: Number($('radiusKm').value) * 1000, color: '#2f6fde', weight: 1.5, fillOpacity: 0.06,
+  }).addTo(map);
+}
+
+/** 만원 → 지도 라벨용 짧은 표기 ("31.5억", "9,500만") */
+const shortWon = (m) => (m >= 10000 ? `${+(m / 10000).toFixed(1)}억` : `${m.toLocaleString()}만`);
+const PIN_ZOOM = 15; // 이 이상 확대하면 점 대신 가격 라벨
+let lastComplexes = [];
+
+/** 검색 조건에 맞는 단지 전체를 지도에 (응답의 complexes 집계) */
+function drawMarkers(complexes, fit) {
+  lastComplexes = complexes;
+  markers.clearLayers();
+  markerByComplex.clear();
+  const located = complexes.filter((c) => c.location);
+  const asPin = map.getZoom() >= PIN_ZOOM;
+  // 점 크기 = 이 결과 안에서 상대적인 거래 수 (절대값이면 메인 화면처럼 거래가 많을 때 전부 최대 크기)
+  const maxCount = Math.max(1, ...located.map((c) => c.count));
+  for (const c of located) {
+    const ll = [c.location.lat, c.location.lon];
+    const sel = c.complexId === state.complexId;
+    const m = asPin
+      ? L.marker(ll, { icon: L.divIcon({ className: '', html: `<div class="pin${sel ? ' sel' : ''}">${shortWon(c.dealAmount)}</div>`, iconSize: null }) })
+      : L.circleMarker(ll, {
+          radius: 4 + 8 * Math.sqrt(c.count / maxCount), color: '#fff', weight: 1.5,
+          fillColor: sel ? '#e8590c' : '#2f6fde', fillOpacity: 0.85,
+        });
+    m.bindPopup(
+      `<b>${esc(c.aptName)}</b><br>${esc(c.sggName)} ${esc(c.umdName)}${c.buildYear ? ` · ${c.buildYear}년` : ''}<br>` +
+      `최근 ${esc(c.dealDate)} <b>${won(c.dealAmount)}</b> (${sqm(c.area)}㎡)<br>` +
+      `조건에 맞는 거래 ${c.count.toLocaleString()}건` +
+      (sel ? '' : `<br><button data-complex="${esc(c.complexId)}" data-name="${esc(c.aptName)}">이 단지 거래 보기</button>`),
+    );
+    m.on('click', () => highlight(c.complexId));
+    m.addTo(markers);
+    markerByComplex.set(c.complexId, m);
+  }
+  if (fit && located.length) {
+    map.fitBounds(L.latLngBounds(located.map((c) => [c.location.lat, c.location.lon])).pad(0.15), { maxZoom: 16 });
+  }
+}
+map.on('zoomend', () => drawMarkers(lastComplexes, false));
+map.on('popupopen', (e) => {
+  e.popup.getElement().querySelector('button[data-complex]')?.addEventListener('click', (ev) => {
+    setComplex({ complexId: ev.target.dataset.complex, aptName: ev.target.dataset.name });
+    run(1);
+  });
+});
+
+function highlight(complexId) {
+  document.querySelectorAll('.item').forEach((el) => el.classList.toggle('active', el.dataset.complex === complexId));
+  document.querySelector(`.item[data-complex="${CSS.escape(complexId)}"]`)?.scrollIntoView({ block: 'nearest' });
+}
+
+// ---------- 검색 ----------
+function params(page) {
+  const p = new URLSearchParams();
+  const q = $('q').value.trim();
+  if (state.complexId) p.set('complexId', state.complexId);
+  else if (q) p.set('q', q);
+  if ($('sggCd').value) p.set('sggCd', $('sggCd').value);
+  // 화면은 억 단위, API는 만원 단위
+  if ($('minPrice').value) p.set('minPrice', Math.round($('minPrice').value * 10000));
+  if ($('maxPrice').value) p.set('maxPrice', Math.round($('maxPrice').value * 10000));
+  for (const k of ['minArea', 'maxArea', 'from', 'to']) if ($(k).value) p.set(k, $(k).value);
+  if ($('includeCanceled').checked) p.set('includeCanceled', 'true');
+  if (q && !state.complexId && $('sort').value !== 'relevance') p.set('sort', $('sort').value);
+  if ($('newOnly').checked && state.latestFirstSeen) p.set('firstSeenFrom', state.latestFirstSeen.date);
+  if ($('radiusOn').checked && state.center) {
+    p.set('lat', state.center.lat.toFixed(6));
+    p.set('lon', state.center.lng.toFixed(6));
+    p.set('radiusKm', $('radiusKm').value);
+  }
+  p.set('page', page);
+  p.set('size', PAGE_SIZE);
+  return p;
+}
+
+let seq = 0;
+async function run(page = 1) {
+  // 메인 화면에서 검색·클릭으로 들어오면 지도 화면으로 (뒤로가기 = 메인)
+  if ($('searchView').hidden) {
+    history.pushState(null, '', '?view=map');
+    showView('search');
+  }
+  state.page = page;
+  drawRadius();
+  const my = ++seq;
+  const p = params(page);
+  // 주소창에 검색 상태를 남김 → 새로고침·링크 공유 시 그대로 복원
+  const shown = new URLSearchParams(p);
+  shown.delete('size');
+  if (page === 1) shown.delete('page');
+  if (state.complexId) shown.set('q', $('q').value.trim());
+  if (!shown.size) shown.set('view', 'map'); // 조건 없는 지도 화면도 메인과 구분
+  history.replaceState(null, '', (shown.size ? `?${shown}` : location.pathname) + location.hash);
+  const q = p.get('q');
+  const [res, analysis] = await Promise.all([
+    fetch(`/search?${p}`),
+    q ? fetch(`/analyze?${new URLSearchParams({ q })}`).then((r) => (r.ok ? r.json() : null)) : null,
+  ]);
+  const data = await res.json();
+  if (my !== seq) return; // 늦게 온 이전 응답 무시
+  renderAnalysis(analysis);
+  $('sort').hidden = !q;
+  if (!res.ok) {
+    $('list').innerHTML = `<div class="empty">요청이 올바르지 않아요<br><small>${esc(data.issues?.map((i) => i.message).join(', ') ?? data.error)}</small></div>`;
+    return;
+  }
+  render(data);
+}
+
+// ---------- 메인 화면 ----------
+const md = (d) => { const [, m, dd] = d.split('-').map(Number); return `${m}/${dd}`; };
+const tradeRow = (it) => `
+  <div class="item" data-complex="${esc(it.complexId)}" data-name="${esc(it.aptName)}">
+    <div class="name">${esc(it.aptName)}${it.firstSeenDate && it.firstSeenDate === state.latestFirstSeen?.date ? '<span class="badge new">신규</span>' : ''}</div>
+    <div class="price">${won(it.dealAmount)}</div>
+    <div class="meta">${esc(it.sggName)} ${esc(it.umdName)} · ${sqm(it.area)}㎡(${pyeong(it.area)}평) · ${esc(it.floor ?? '-')}층${it.buildYear ? ` · ${it.buildYear}년` : ''}</div>
+    <div class="meta right">계약 ${esc(it.dealDate)}</div>
+  </div>`;
+const rankRow = (t, i, value, sub) => `
+  <button data-complex="${esc(t.complexId)}" data-name="${esc(t.aptName)}">
+    <span class="n">${i + 1}</span>
+    <span class="nm">${esc(t.aptName)}<span class="sub">${esc(t.sggName)} ${esc(t.umdName)}${sub ? ` · ${sub}` : ''}</span></span>
+    <span class="v">${value}</span>
+  </button>`;
+
+async function loadHome() {
+  const f = state.latestFirstSeen;
+  const feedParams = new URLSearchParams({ size: '12' });
+  if (f) feedParams.set('firstSeenFrom', f.date);
+  const [h, feed] = await Promise.all([
+    fetch('/home').then((r) => r.json()),
+    fetch(`/search?${feedParams}`).then((r) => r.json()),
+  ]);
+  const next = state.nextRefreshAt ? shortDate(state.nextRefreshAt) : null;
+
+  $('heroTitle').innerHTML = f
+    ? `<em>${md(f.date)}</em> 새로 공개된 실거래 <em>${f.count.toLocaleString()}건</em>`
+    : '새로 공개된 실거래';
+  $('heroSub').textContent = f
+    ? '계약은 더 전이어도 이날 처음 공개된 거래예요. 거래를 누르면 지도에서 그 단지를 보여줘요.'
+    : `매일 새벽 자동 갱신으로 새로 공개된 거래를 모아 보여줘요. ${next ? `첫 갱신은 ${next}이고, ` : ''}그 전까지는 최근 계약된 거래를 보여줘요.`;
+
+  const top = h.topTrades[0];
+  $('homeCards').innerHTML = `
+    <div class="card new"><small>새로 공개</small><b>${f ? `${f.count.toLocaleString()}건` : '준비 중'}</b><span>${f ? `${md(f.date)} 갱신` : next ? `첫 갱신 ${next}` : '자동 갱신 꺼짐'}</span></div>
+    <div class="card"><small>최근 ${h.days}일 계약 거래</small><b>${h.total.toLocaleString()}건</b><span>해제 거래 제외</span></div>
+    <div class="card"><small>평균 평당가</small><b>${won(h.avgPricePerPyeong)}</b><span>전용면적 기준 · 최근 ${h.days}일</span></div>
+    <div class="card"><small>최고가 거래</small><b>${top ? won(top.dealAmount) : '-'}</b><span>${top ? `${esc(top.aptName)} · ${esc(top.sggName)}` : ''}</span></div>`;
+
+  $('feedTitle').textContent = f ? `${md(f.date)} 새로 공개된 거래` : '최근 계약된 거래';
+  $('feedNote').textContent = `${feed.total.toLocaleString()}건 중 ${feed.items.length}건`;
+  $('feed').innerHTML = feed.items.map(tradeRow).join('') || '<div class="empty">거래가 없어요</div>';
+  $('topNote').textContent = $('busyNote').textContent = `최근 ${h.days}일`;
+  $('topTrades').innerHTML = h.topTrades.map((t, i) => rankRow(t, i, won(t.dealAmount), `${sqm(t.area)}㎡ · ${md(t.dealDate)}`)).join('');
+  $('busiest').innerHTML = h.busiest.map((t, i) => rankRow(t, i, `${t.count}건`)).join('');
+}
+
+/** 메인 → 지도 화면에서 그 단지 거래만 + 정보창 */
+function openComplex(complexId, aptName) {
+  resetFilters();
+  setComplex({ complexId, aptName });
+  state.focusAfter = complexId;
+  run(1);
+}
+$('homeView').addEventListener('click', (e) => {
+  const el = e.target.closest('[data-complex]');
+  if (el) openComplex(el.dataset.complex, el.dataset.name);
+});
+$('openMap').onclick = () => { resetFilters(); setComplex(null); $('q').value = ''; run(1); };
+$('feedMore').onclick = () => {
+  resetFilters();
+  setComplex(null);
+  $('q').value = '';
+  $('newOnly').checked = !!state.latestFirstSeen;
+  run(1);
+};
+
+function resetFilters() {
+  $('filters').reset();
+  state.center = null;
+  $('mapHint').classList.remove('on');
+}
+
+function showView(v) {
+  $('homeView').hidden = v !== 'home';
+  $('searchView').hidden = v !== 'search';
+  if (v === 'search') map.invalidateSize(); // 숨겨진 채로 만든 지도는 크기를 다시 재야 함
+}
+
+/** 주소 → 화면: 검색 조건이 없으면 메인, 있으면 지도 화면 */
+function route() {
+  if (!location.search) {
+    // 메인으로 돌아오면 이전 검색어·단지 선택을 비움 (안 그러면 다음 검색어가 이어 붙음)
+    setComplex(null);
+    $('q').value = '';
+    showView('home');
+    return loadHome();
+  }
+  showView('search');
+  run(restoreFromUrl());
+}
+window.addEventListener('popstate', route);
+$('homeLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  if (!location.search) return;
+  history.pushState(null, '', '/');
+  route();
+});
+
+/** 검색어가 형태소·동의어·n-gram으로 어떻게 쪼개져 매칭되는지 */
+function renderAnalysis(a) {
+  $('es').hidden = !a;
+  if (!a) return;
+  const morph = a.morphemes.map((t) =>
+    t.synonym ? `<span class="tok syn" title="동의어 사전으로 추가된 단어">≈ ${esc(t.token)}</span>` : `<span class="tok">${esc(t.token)}</span>`).join('');
+  $('esSteps').innerHTML = `
+    <div class="step"><span>① 형태소 분석</span><div>${morph || '<i>없음</i>'}<br><small>Nori가 단어 단위로 쪼갬. 점선은 동의어 사전으로 함께 찾는 단어</small></div></div>
+    <div class="step"><span>② n-gram 조각</span><div>${a.ngrams.map((t) => `<span class="tok ng">${esc(t)}</span>`).join('') || '<i>2글자 미만</i>'}<br><small>2~3글자 조각. 형태소로 못 찾는 단지명 중간("퍼스티")을 잡음</small></div></div>
+    <div class="step"><span>③ 점수 (BM25)</span><div>모든 단어가 들어있는 거래만 → 필드별 점수 중 최고점<br><small>가중치: 단지명 ×4 &gt; 동 ×2 &gt; 도로명 ×1.5 &gt; 주소 · 드문 단어·짧은 이름일수록 높음. 결과의 "점수 계산"에서 자세히</small></div></div>`;
+}
+
+/** /explain 요약 → 필드별 막대 + 선택된 필드의 단어별 BM25 구성요소 */
+function renderExplain(ex) {
+  if (!ex.matched) return '<div class="note">이 검색어와 일치하는 필드가 없어요</div>';
+  const top = ex.fields[0].score;
+  const rows = ex.fields.map((f) => `
+    <div class="frow ${f.chosen ? '' : 'off'}">
+      <span>${esc(FIELD_LABEL[f.field] ?? f.field)}${f.chosen ? ' ✓' : ''}</span>
+      <span class="bar"><i style="width:${(f.score / top) * 100}%"></i></span>
+      <span style="text-align:right">${f.score.toFixed(1)}</span>
+    </div>`).join('');
+  const chosen = ex.fields[0];
+  const terms = chosen.terms.map((t) => `
+    <tr>
+      <td>${esc(t.terms.join(' / '))}</td>
+      <td>${t.docFreq.toLocaleString()}건</td>
+      <td>${t.idf.toFixed(2)}</td>
+      <td>${t.tf.toFixed(2)}</td>
+      <td>${t.boost.toFixed(1)}</td>
+      <td><b>${t.score.toFixed(1)}</b></td>
+    </tr>`).join('');
+  return `
+    <div>최종 <b>${ex.score.toFixed(1)}점</b> = 필드별 점수 중 최고점 (best_fields)</div>
+    ${rows}
+    <table>
+      <thead><tr><th>단어 (${esc(FIELD_LABEL[chosen.field] ?? chosen.field)})</th><th title="이 단어가 들어있는 거래 수">들어있는 거래</th><th title="드문 단어일수록 큼">희소성 idf</th><th title="필드가 짧을수록 큼">길이 tf</th><th title="필드 가중치 × (k1+1)">가중치</th><th>점수</th></tr></thead>
+      <tbody>${terms}</tbody>
+    </table>
+    <div class="note">점수 = 가중치 × idf × tf. 전체 ${chosen.terms[0].docCount.toLocaleString()}건 중 적게 나오는 단어일수록 idf가 커서, 흔한 브랜드명보다 고유한 단지명이 점수를 좌우해요.</div>`;
+}
+
+function render({ total, took, items, complexes, maxScore }) {
+  $('count').textContent = `${total.toLocaleString()}건`;
+  $('took').textContent = `${took}ms`;
+  $('prev').disabled = state.page <= 1;
+  $('next').disabled = state.page * PAGE_SIZE >= Math.min(total, 100 * PAGE_SIZE);
+
+  if (!items.length) {
+    $('list').innerHTML = '<div class="empty">조건에 맞는 거래가 없어요</div>';
+  } else {
+    $('list').innerHTML = items.map((it) => {
+      const nameHl = it.highlight?.aptName?.[0] ?? it.highlight?.['aptName.ngram']?.[0];
+      const isNew = it.firstSeenDate && it.firstSeenDate === state.latestFirstSeen?.date;
+      const score = it.score != null && maxScore ? `
+        <div class="score">
+          <span class="bar" title="전체 결과 중 최고점 대비"><i style="width:${(it.score / maxScore) * 100}%"></i></span>
+          <b>${it.score.toFixed(1)}</b>
+          <span>일치: ${Object.keys(it.highlight ?? {}).map((f) => esc(FIELD_LABEL[f] ?? f)).join(' · ')}</span>
+          <button class="why" data-id="${esc(it.id)}">점수 계산 ▾</button>
+        </div>
+        <div class="explain" hidden></div>` : '';
+      return `
+      <div class="item" data-complex="${esc(it.complexId)}">
+        <div class="name">${nameHl ? hl(nameHl) : esc(it.aptName)}${isNew ? '<span class="badge new">신규</span>' : ''}${it.canceled ? '<span class="badge cancel">해제</span>' : ''}${it.distanceKm != null ? `<span class="badge dist">${it.distanceKm < 1 ? Math.round(it.distanceKm * 1000) + 'm' : it.distanceKm.toFixed(1) + 'km'}</span>` : ''}</div>
+        <div class="price">${won(it.dealAmount)}</div>
+        <div class="meta">${esc(it.sggName)} ${esc(it.umdName)} · ${sqm(it.area)}㎡(${pyeong(it.area)}평) · ${esc(it.floor ?? '-')}층${it.buildYear ? ` · ${it.buildYear}년` : ''}</div>
+        <div class="meta right">${esc(it.dealDate)}</div>
+        ${score}
+      </div>`;
+    }).join('');
+  }
+  // 지도 = 조건에 맞는 단지 집계(거래 많은 순 300개) + 지금 목록에 있는 단지 (작은 단지는 집계 밖일 수 있음)
+  const onMap = new Map(complexes.map((c) => [c.complexId, c]));
+  for (const it of items) {
+    if (onMap.has(it.complexId)) continue;
+    const n = items.filter((x) => x.complexId === it.complexId).length;
+    onMap.set(it.complexId, { ...it, count: n });
+  }
+  // 첫 페이지에서만 결과에 맞춰 지도 이동, 반경 검색 중엔 사용자가 보던 위치 유지
+  drawMarkers([...onMap.values()], state.page === 1 && !($('radiusOn').checked && state.center));
+  $('list').scrollTop = 0;
+  if (state.focusAfter) {
+    const id = state.focusAfter;
+    state.focusAfter = null;
+    focusComplex(id); // fitBounds 대신 그 단지로 이동 + 정보창
+  }
+  // 주소 끝에 #why를 붙이면 첫 결과의 점수 계산을 펼친 채로 (README 캡처용)
+  if (location.hash === '#why') document.querySelector('.why')?.click();
+}
+
+$('list').addEventListener('click', async (e) => {
+  if (e.target.closest('.explain')) return;
+  const why = e.target.closest('.why');
+  if (why) {
+    const box = why.closest('.item').querySelector('.explain');
+    box.hidden = !box.hidden;
+    why.textContent = box.hidden ? '점수 계산 ▾' : '점수 계산 ▴';
+    if (!box.hidden && !box.dataset.loaded) {
+      box.textContent = '계산 내역 불러오는 중…';
+      const res = await fetch(`/explain?${new URLSearchParams({ id: why.dataset.id, q: $('q').value.trim() })}`);
+      box.innerHTML = res.ok ? renderExplain(await res.json()) : '불러오지 못했어요';
+      box.dataset.loaded = '1';
+    }
+    return;
+  }
+  const el = e.target.closest('.item');
+  if (el) focusComplex(el.dataset.complex);
+});
+
+/** 목록 → 지도: 그 단지로 이동하고 정보창 열기 */
+function focusComplex(id) {
+  highlight(id);
+  const m = markerByComplex.get(id);
+  if (!m) return;
+  const target = m.getLatLng();
+  const zoom = Math.max(map.getZoom(), 15);
+  // 확대가 바뀌면 zoomend에서 마커를 다시 그리므로(점 ↔ 가격 라벨) 이동이 끝난 뒤 새 마커에 정보창을 엶
+  const open = () => markerByComplex.get(id)?.openPopup();
+  if (map.getZoom() === zoom && map.getCenter().distanceTo(target) < 1) return open();
+  map.once('moveend', open);
+  map.setView(target, zoom);
+}
+$('prev').onclick = () => run(state.page - 1);
+$('next').onclick = () => run(state.page + 1);
+$('filters').addEventListener('change', () => run(1));
+$('filters').addEventListener('submit', (e) => { e.preventDefault(); run(1); });
+// 반경 검색을 켰는데 중심점이 없으면 지도 클릭을 안내
+$('radiusOn').addEventListener('change', () => $('mapHint').classList.toggle('on', $('radiusOn').checked && !state.center));
+map.on('click', () => $('mapHint').classList.remove('on'));
+
+// ---------- 자동완성 ----------
+let acTimer, acItems = [], acIndex = -1;
+const suggest = $('suggest');
+
+function setComplex(item) {
+  state.complexId = item?.complexId ?? null;
+  $('complexChip').classList.toggle('on', !!item);
+  if (item) $('q').value = item.aptName;
+  closeSuggest();
+}
+function closeSuggest() { suggest.classList.remove('on'); acIndex = -1; }
+function markMatch(name, q) {
+  const i = name.toLowerCase().indexOf(q.toLowerCase());
+  return i < 0 ? esc(name) : esc(name.slice(0, i)) + '<mark>' + esc(name.slice(i, i + q.length)) + '</mark>' + esc(name.slice(i + q.length));
+}
+
+$('q').addEventListener('input', () => {
+  if (state.complexId) setComplex(null); // 다시 타이핑하면 단지 선택 해제
+  clearTimeout(acTimer);
+  const q = $('q').value.trim();
+  if (!q) return closeSuggest();
+  acTimer = setTimeout(async () => {
+    const p = new URLSearchParams({ q, size: '8' });
+    if ($('sggCd').value) p.set('sggCd', $('sggCd').value);
+    const res = await fetch(`/autocomplete?${p}`);
+    if (!res.ok || q !== $('q').value.trim()) return;
+    acItems = (await res.json()).items;
+    acIndex = -1;
+    suggest.innerHTML = acItems.map((it, i) =>
+      `<li data-i="${i}"><span>${markMatch(it.aptName, q)}</span><span class="sub">${esc(it.sggName)} ${esc(it.umdName)}${it.buildYear ? ` · ${it.buildYear}` : ''}</span></li>`).join('');
+    suggest.classList.toggle('on', acItems.length > 0);
+  }, 150);
+});
+
+$('q').addEventListener('keydown', (e) => {
+  const open = suggest.classList.contains('on');
+  if (e.key === 'ArrowDown' && open) { acIndex = (acIndex + 1) % acItems.length; e.preventDefault(); }
+  else if (e.key === 'ArrowUp' && open) { acIndex = (acIndex - 1 + acItems.length) % acItems.length; e.preventDefault(); }
+  else if (e.key === 'Escape') return closeSuggest();
+  else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (open && acIndex >= 0) setComplex(acItems[acIndex]);
+    closeSuggest();
+    return run(1);
+  } else return;
+  [...suggest.children].forEach((li, i) => li.classList.toggle('active', i === acIndex));
+});
+suggest.addEventListener('mousedown', (e) => {
+  const li = e.target.closest('li');
+  if (!li) return;
+  e.preventDefault();
+  setComplex(acItems[Number(li.dataset.i)]);
+  run(1);
+});
+$('q').addEventListener('blur', () => setTimeout(closeSuggest, 100));
+$('complexChip').onclick = () => { setComplex(null); $('q').value = ''; $('q').focus(); run(1); };
+
+// ---------- 시작 ----------
+/** 주소창 → 화면 상태 (?q=래미안&sggCd=11650&minPrice=200000&lat=..&lon=..&radiusKm=1) */
+function restoreFromUrl() {
+  const u = new URLSearchParams(location.search);
+  $('q').value = u.get('q') ?? '';
+  setComplex(u.get('complexId') ? { complexId: u.get('complexId'), aptName: u.get('q') ?? '' } : null);
+  $('q').value = u.get('q') ?? '';
+  $('sggCd').value = u.get('sggCd') ?? '';
+  // API는 만원 단위, 화면은 억 단위
+  if (u.get('minPrice')) $('minPrice').value = Number(u.get('minPrice')) / 10000;
+  if (u.get('maxPrice')) $('maxPrice').value = Number(u.get('maxPrice')) / 10000;
+  for (const k of ['minArea', 'maxArea', 'from', 'to']) $(k).value = u.get(k) ?? '';
+  $('includeCanceled').checked = u.get('includeCanceled') === 'true';
+  $('sort').value = u.get('sort') ?? 'relevance';
+  $('newOnly').checked = !!state.latestFirstSeen && u.get('firstSeenFrom') != null;
+  state.center = null;
+  $('radiusOn').checked = false;
+  if (u.get('lat') && u.get('lon') && u.get('radiusKm')) {
+    state.center = L.latLng(Number(u.get('lat')), Number(u.get('lon')));
+    $('radiusOn').checked = true;
+    $('radiusKm').value = u.get('radiusKm');
+    map.fitBounds(state.center.toBounds(Number(u.get('radiusKm')) * 2000)); // 반경 원이 꽉 차게
+  }
+  return Number(u.get('page') ?? 1);
+}
+
+function renderStatus(st) {
+  const r = st.lastRefresh;
+  $('status').innerHTML = [
+    r?.finishedAt ? `갱신 ${shortDate(r.finishedAt)}${r.ok ? '' : ' (실패)'}` : '',
+    st.nextRefreshAt ? `다음 ${shortDate(st.nextRefreshAt)}` : '',
+  ].filter(Boolean).join(' · ');
+  state.nextRefreshAt = st.nextRefreshAt;
+  state.latestFirstSeen = st.latestFirstSeen;
+  $('newOnlyLabel').hidden = !st.latestFirstSeen;
+  if (st.latestFirstSeen) {
+    const [, m, d] = st.latestFirstSeen.date.split('-').map(Number);
+    $('newOnlyInfo').textContent = `(${m}/${d} · ${st.latestFirstSeen.count.toLocaleString()}건)`;
+  }
+}
+
+Promise.all([
+  fetch('/regions').then((r) => r.json()),
+  fetch('/status').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+]).then(([regions, status]) => {
+  if (status) renderStatus(status);
+  const bySido = Map.groupBy ? Map.groupBy(regions, (r) => r.sido) : regions.reduce((m, r) => m.set(r.sido, [...(m.get(r.sido) ?? []), r]), new Map());
+  for (const [sido, list] of bySido) {
+    const g = document.createElement('optgroup');
+    g.label = sido;
+    for (const r of list) g.append(new Option(r.sgg, r.lawdCd));
+    $('sggCd').append(g);
+  }
+  // 지역 목록이 채워진 뒤에 복원해야 sggCd 선택이 먹음
+  route();
+});
+</script>
+</body>
+</html>

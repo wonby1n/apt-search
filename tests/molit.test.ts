@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { MolitFatalError, MolitRetryableError, parseTradeXml } from '../src/ingest/molit.js';
+import { MolitFatalError, MolitRateLimitError, MolitRetryableError, parseTradeXml } from '../src/ingest/molit.js';
 
 const fixture = readFileSync(new URL('./fixtures/trade-page.xml', import.meta.url), 'utf8');
 
@@ -29,8 +29,31 @@ describe('parseTradeXml', () => {
     expect(() => parseTradeXml(xml)).toThrow(MolitFatalError);
   });
 
-  it('그 외 resultCode 오류는 재시도 대상', () => {
-    const xml = `<response><header><resultCode>99</resultCode><resultMsg>ERR</resultMsg></header></response>`;
-    expect(() => parseTradeXml(xml)).toThrow(MolitRetryableError);
+  it('제공기관 장애(01·02·04·05)와 알 수 없는 코드는 재시도 대상', () => {
+    for (const code of ['01', '04', '99']) {
+      const xml = `<response><header><resultCode>${code}</resultCode><resultMsg>ERR</resultMsg></header></response>`;
+      expect(() => parseTradeXml(xml), code).toThrow(MolitRetryableError);
+    }
+  });
+
+  it('요청 파라미터·URL 오류(10·11·12)는 재시도하지 않는다', () => {
+    for (const code of ['10', '11', '12']) {
+      const xml = `<response><header><resultCode>${code}</resultCode><resultMsg>ERR</resultMsg></header></response>`;
+      expect(() => parseTradeXml(xml), code).toThrow(MolitFatalError);
+    }
+  });
+
+  it('초당 요청 제한(23)은 재시도 대상', () => {
+    const xml = `<OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>LIMITED_NUMBER_OF_SERVICE_REQUESTS_PER_SECOND_EXCEEDS_ERROR</errMsg><returnReasonCode>23</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>`;
+    expect(() => parseTradeXml(xml)).toThrow(MolitRateLimitError);
+  });
+
+  it('데이터 없음(03)은 에러가 아니라 0건', () => {
+    for (const code of ['03', '003']) {
+      const xml = `<response><header><resultCode>${code}</resultCode><resultMsg>NO_DATA</resultMsg></header></response>`;
+      expect(parseTradeXml(xml).items, code).toEqual([]);
+    }
+    const gw = `<OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>NODATA_ERROR</errMsg><returnReasonCode>03</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>`;
+    expect(parseTradeXml(gw).totalCount).toBe(0);
   });
 });

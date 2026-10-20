@@ -11,11 +11,14 @@
     "es:up": "docker compose up -d --build",
     "es:down": "docker compose down",
     "collect": "tsx src/ingest/collect.ts",
+    "geocode": "tsx src/ingest/geocode.ts",
     "index": "tsx src/ingest/index-data.ts",
+    "refresh": "tsx src/ingest/run-refresh.ts",
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:it": "vitest run --mode it tests/search.it.test.ts"
   },
   "dependencies": {
     "@elastic/elasticsearch": "9.4.3",

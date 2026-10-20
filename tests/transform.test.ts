@@ -4,6 +4,7 @@ import { parseTradeXml } from '../src/ingest/molit.js';
 import { monthRange } from '../src/ingest/months.js';
 import { resolveRegions } from '../src/ingest/regions.js';
 import { parseShortDate, tradeId, transformTrade } from '../src/ingest/transform.js';
+import { geocodeQueries } from '../src/ingest/geo.js';
 
 const [raemian, eunma] = parseTradeXml(
   readFileSync(new URL('./fixtures/trade-page.xml', import.meta.url), 'utf8'),
@@ -27,8 +28,15 @@ describe('transformTrade', () => {
       cancelDate: null,
       address: '서울특별시 서초구 반포동 20-43 래미안퍼스티지',
     });
+    expect(r.doc.complexId).toBe('11650-2134'); // aptSeq
     // 385,000만원 / (84.93㎡ / 3.305785) = 14,985.6 → 14,986만원/평
     expect(r.doc.pricePerPyeong).toBe(14986);
+  });
+
+  it('aptSeq가 없으면 시군구·법정동·지번·단지명으로 complexId를 만든다', () => {
+    const r = transformTrade({ ...raemian!, aptSeq: ' ' });
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.doc.complexId).toBe('11650|반포동|20-43|래미안퍼스티지');
   });
 
   it('해제 거래와 지하층을 처리한다', () => {
@@ -66,5 +74,24 @@ describe('utils', () => {
     expect(resolveRegions('busan')).toHaveLength(16);
     expect(resolveRegions('11680,seoul')).toHaveLength(25); // 중복 제거
     expect(() => resolveRegions('99999')).toThrow();
+  });
+});
+
+describe('geocodeQueries', () => {
+  it('지번 주소를 먼저, 도로명 주소(앞자리 0 제거)를 다음으로 시도한다', () => {
+    const raw = { ...raemian!, roadNmBonbun: '00270', roadNmBubun: '00000' };
+    const r = transformTrade(raw);
+    if (!r.ok) throw new Error(r.reason);
+    expect(geocodeQueries(r.doc, raw)).toEqual([
+      { by: 'jibun', query: '서울특별시 서초구 반포동 20-43' },
+      { by: 'road', query: '서울특별시 서초구 신반포로 270' },
+    ]);
+  });
+
+  it('도로명 부번이 있으면 붙이고, 지번이 없으면 도로명만', () => {
+    const raw = { ...raemian!, jibun: ' ', roadNmBonbun: '00012', roadNmBubun: '00003' };
+    const r = transformTrade(raw);
+    if (!r.ok) throw new Error(r.reason);
+    expect(geocodeQueries(r.doc, raw)).toEqual([{ by: 'road', query: '서울특별시 서초구 신반포로 12-3' }]);
   });
 });

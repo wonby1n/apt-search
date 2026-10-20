@@ -53,3 +53,20 @@ export async function swapAlias(
   }
   return oldIndices;
 }
+
+/**
+ * 버전 인덱스(alias-YYYYMMDD-hhmmss) 중 current와 그 직전 keep개만 남기고 삭제
+ * 매일 갱신하면 하루 한 개씩 쌓이므로 정리 필요
+ */
+export async function pruneOldIndices(es: Client, alias: string, current: string, keep: number): Promise<string[]> {
+  const res = await es.cat.indices({ index: `${alias}-*`, h: 'index', format: 'json' });
+  const pattern = new RegExp(`^${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d{8}-\\d{6}$`);
+  const older = res
+    .map((r) => r.index!)
+    .filter((i) => pattern.test(i) && i < current) // 이름의 시각 순 = 생성 순
+    .sort()
+    .reverse();
+  const doomed = older.slice(keep);
+  if (doomed.length) await es.indices.delete({ index: doomed });
+  return doomed;
+}

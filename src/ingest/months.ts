@@ -17,3 +17,10 @@ export function monthRange(from: string, to: string): string[] {
 export function currentYmd(now = new Date()): string {
   return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
+
+/** 최근 n개월 (이번 달 포함). 2 → ["202609", "202610"] */
+export function recentMonths(n: number, now = new Date()): string[] {
+  const to = currentYmd(now);
+  const back = new Date(now.getFullYear(), now.getMonth() - (n - 1), 1);
+  return monthRange(currentYmd(back), to);
+}
