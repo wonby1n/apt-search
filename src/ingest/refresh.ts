@@ -102,7 +102,19 @@ export function nextRunAt(hhmm: string, now = new Date()): Date {
   return next;
 }
 
-/** 매일 hh:mm에 갱신. 반환값으로 다음 실행 시각 조회 */
+/** 오늘 hh:mm이 지났는데 그 이후로 성공한 갱신이 없으면 true (서버가 꺼져 있었거나 PC가 절전이었던 날) */
+export function isRefreshDue(hhmm: string, last: RefreshStatus | null, now = new Date()): boolean {
+  const [h, m] = hhmm.split(':').map(Number);
+  const todayAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+  if (now < todayAt) return false;
+  return !last?.ok || new Date(last.startedAt) < todayAt;
+}
+
+/**
+ * 매일 hh:mm에 갱신. 반환값으로 다음 실행 시각 조회
+ * 서버를 그 시각 이후에 켰고 오늘 갱신이 아직이면 바로 한 번 따라잡는다.
+ * (절전 중 지난 타이머는 깨어날 때 실행되므로 따로 처리하지 않음)
+ */
 export function scheduleDailyRefresh(hhmm: string, deps: RefreshDeps) {
   let next = nextRunAt(hhmm);
   const arm = () => {
@@ -114,5 +126,10 @@ export function scheduleDailyRefresh(hhmm: string, deps: RefreshDeps) {
     }, next.getTime() - Date.now()).unref();
   };
   arm();
+  void loadRefreshStatus().then((last) => {
+    if (!isRefreshDue(hhmm, last)) return;
+    (deps.log ?? console.log)(`[갱신] 오늘 ${hhmm} 갱신이 아직이라 지금 실행`);
+    return runRefresh(deps);
+  });
   return { nextAt: () => next };
 }
